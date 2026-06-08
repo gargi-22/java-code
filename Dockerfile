@@ -3,7 +3,7 @@ FROM eclipse-temurin:17
 # Install OpenCV Java bindings + native libs
 RUN apt-get update && apt-get install -y \
     libopencv-java \
-    libopencv4.5d-jni \
+    libopencv-jni \
     && apt-get clean
 
 WORKDIR /app
