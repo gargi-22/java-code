@@ -1,18 +1,24 @@
 FROM eclipse-temurin:17
 
-# Install OpenCV
+# Install dependencies
 RUN apt-get update && apt-get install -y \
-    libopencv-dev \
-    python3-opencv \
+    wget \
+    libopencv4.5-java \
     && apt-get clean
 
-# Set OpenCV library path
-ENV LD_LIBRARY_PATH=/usr/lib/jni
+# Find and set OpenCV jar path
+RUN find / -name "opencv*.jar" 2>/dev/null
 
 WORKDIR /app
 COPY . .
 
-# Compile with OpenCV
-RUN javac -cp /usr/share/java/opencv.jar VideoStreamingServer.java
+# Compile with OpenCV Java jar
+RUN OPENCV_JAR=$(find / -name "opencv*.jar" 2>/dev/null | head -1) && \
+    echo "Found jar: $OPENCV_JAR" && \
+    javac -cp "$OPENCV_JAR" VideoStreamingServer.java
 
-CMD ["java", "-Djava.library.path=/usr/lib/jni", "-cp", "/usr/share/java/opencv.jar:.", "VideoStreamingServer"]
+# Run with OpenCV
+CMD OPENCV_JAR=$(find / -name "opencv*.jar" 2>/dev/null | head -1) && \
+    java -Djava.library.path=/usr/lib/jni \
+    -cp "$OPENCV_JAR:." \
+    VideoStreamingServer
