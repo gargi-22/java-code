@@ -18,7 +18,7 @@ import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.videoio.VideoCapture;
  
-public class VideoStreamingServer {
+public class VideoStreamingServer{
  
     private static final int DEFAULT_PORT  = 9090;
     private static final int TARGET_HEIGHT = 360;
@@ -28,10 +28,10 @@ public class VideoStreamingServer {
     // =========================================================================
     public static void main(String[] args) throws IOException {
  
-       Path frontVideo = Paths.get("right (1).mov");
-       Path rearVideo  = Paths.get("rear (1).mov");
-       Path sideVideo  = Paths.get("left (1).mov");
-       Path backVideo  = Paths.get("Front.mp4");
+        Path frontVideo = Paths.get("right.mov");
+        Path rearVideo  = Paths.get("rear.mov");
+        Path sideVideo  = Paths.get("left.mov");
+        Path backVideo  = Paths.get("Front.mp4");
  
         Path[] videos = { frontVideo, rearVideo, sideVideo, backVideo };
  
@@ -55,16 +55,86 @@ public class VideoStreamingServer {
  
         server.createContext("/stitch", new StitchHandler(videos));
         server.createContext("/play",   new PlayerPageHandler());
+        server.createContext("/meta",   new MetaHandler(port));            // ← NEW
  
         server.setExecutor(Executors.newFixedThreadPool(4));
         server.start();
  
-        System.out.println("Server started  →  http://localhost:" + port + "/play");
+        System.out.println("Streamed data  →  http://localhost:" + port + "/play");
+        System.out.println("Metadata        →  http://localhost:" + port + "/meta");
     }
  
     // =========================================================================
-    // STITCH HANDLER  —  feather-blend panorama only
+    //  META HANDLER  —  returns camera layout as JSON
     // =========================================================================
+ 
+    private static class MetaHandler implements HttpHandler {
+ 
+    private final int port;
+ 
+    MetaHandler(int port) { this.port = port; }
+ 
+    @Override
+    public void handle(HttpExchange ex) throws IOException {
+        if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) {
+            ex.sendResponseHeaders(405, -1);
+            return;
+        }
+ 
+        // Derive host from the incoming request's Host header (falls back to localhost)
+        String host = ex.getRequestHeaders().getFirst("Host");
+        if (host == null || host.isEmpty()) host = "localhost:" + port;
+        String baseUrl = "http://" + host;
+ 
+        int N       = 4;
+        int overlap = Math.min(OVERLAP_PX, TARGET_WIDTH / 4);
+        int panoW   = TARGET_WIDTH + (N - 1) * (TARGET_WIDTH - overlap);
+        int panoH   = TARGET_HEIGHT;
+ 
+        String[] names = { "front", "rear", "left", "right" };
+ 
+        StringBuilder sb = new StringBuilder();
+        sb.append("{\n");
+        sb.append("  \"panorama\": {\n");
+        sb.append("    \"width\": ").append(panoW).append(",\n");
+        sb.append("    \"height\": ").append(panoH).append(",\n");
+        sb.append("    \"player_url\": \"").append(baseUrl).append("/play\"\n");
+        sb.append("  },\n");
+        sb.append("  \"cameras\": {\n");
+ 
+        for (int i = 0; i < N; i++) {
+            int x = i * (TARGET_WIDTH - overlap);
+            int w = (x + TARGET_WIDTH <= panoW) ? TARGET_WIDTH : (panoW - x);
+ 
+            sb.append("    \"").append(names[i]).append("\": {\n");
+            sb.append("      \"x\": ").append(x).append(",\n");
+            sb.append("      \"y\": 0,\n");
+            sb.append("      \"w\": ").append(w).append(",\n");
+            sb.append("      \"h\": ").append(panoH).append(",\n");
+            sb.append("      \"source_w\": ").append(TARGET_WIDTH).append(",\n");
+            sb.append("      \"source_h\": ").append(TARGET_HEIGHT).append(",\n");
+            sb.append("      \"overlap_px\": ").append(overlap).append("\n");
+            sb.append("    }");
+            if (i < N - 1) sb.append(",");
+            sb.append("\n");
+        }
+ 
+        sb.append("  }\n}");
+ 
+        byte[] body = sb.toString().getBytes("UTF-8");
+        ex.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
+        ex.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        ex.sendResponseHeaders(200, body.length);
+        try (OutputStream os = ex.getResponseBody()) {
+            os.write(body);
+        }
+    }
+}
+ 
+    // =========================================================================
+    //  STITCH HANDLER  —  feather-blend panorama only
+    // =========================================================================
+ 
     private static class StitchHandler implements HttpHandler {
         private final Path[] videoFiles;
         StitchHandler(Path[] f) { this.videoFiles = f; }
@@ -114,8 +184,9 @@ public class VideoStreamingServer {
     }
  
     // =========================================================================
-    // PLAYER PAGE  —  stitched panorama only, full-viewport
+    //  PLAYER PAGE  —  stitched panorama only, full-viewport
     // =========================================================================
+ 
     private static class PlayerPageHandler implements HttpHandler {
  
         @Override public void handle(HttpExchange ex) throws IOException {
@@ -156,6 +227,7 @@ public class VideoStreamingServer {
     // =========================================================================
     //  CORE BLENDING  —  featherStitch
     // =========================================================================
+ 
     static Mat featherStitch(Mat[] frames) {
         int N = frames.length;
         int H = TARGET_HEIGHT;
@@ -233,8 +305,9 @@ public class VideoStreamingServer {
     }
  
     // =========================================================================
-    // SHARED HELPERS
+    //  SHARED HELPERS
     // =========================================================================
+ 
     static byte[] encodeJpeg(Mat frame) {
         MatOfByte buf    = new MatOfByte();
         MatOfInt  params = new MatOfInt(Imgcodecs.IMWRITE_JPEG_QUALITY, 88);
