@@ -6,41 +6,38 @@ import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
-import java.nio.ByteBuffer;
-import java.nio.channels.SeekableByteChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardOpenOption;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.Executors;
  
-import org.opencv.core.Core;
-import org.opencv.core.Mat;
-import org.opencv.core.MatOfByte;
-import org.opencv.core.MatOfPoint2f;
-import org.opencv.core.Point;
-import org.opencv.core.Size;
+import org.opencv.core.*;
 import org.opencv.imgcodecs.Imgcodecs;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.videoio.VideoCapture;
  
 public class VideoStreamingServer {
-    private static final int DEFAULT_PORT = 8080;
-    private static final int BUFFER_SIZE = 64 * 1024;
  
+    private static final int DEFAULT_PORT  = 9090;
+    private static final int TARGET_HEIGHT = 360;
+    private static final int TARGET_WIDTH  = 640;
+    private static final int OVERLAP_PX    = 80;
+ 
+    // =========================================================================
     public static void main(String[] args) throws IOException {
  
-        Path frontVideo = Paths.get("right_camera.mp4");
-        Path rearVideo  = Paths.get("rear_camera.mp4");
-        Path sideVideo  = Paths.get("left_camera.mp4");
-        Path backVideo  = Paths.get("top_camera.mp4");
+       Path frontVideo = Paths.get("right (1).mov");
+       Path rearVideo  = Paths.get("rear (1).mov");
+       Path sideVideo  = Paths.get("left (1).mov");
+       Path backVideo  = Paths.get("Front.mp4");
  
-        // CHANGED: labels updated to match camera names
-        Path[] videos   = {frontVideo, rearVideo, sideVideo, backVideo};
-        String[] labels = {"Right", "Rear", "Left", "Top"};
+        Path[] videos = { frontVideo, rearVideo, sideVideo, backVideo };
+ 
         for (Path v : videos) {
             if (!Files.exists(v) || Files.isDirectory(v)) {
-                System.err.println("Video file does not exist or is not a regular file: " + v);
+                System.err.println("Video file not found: " + v);
                 return;
             }
         }
@@ -50,333 +47,207 @@ public class VideoStreamingServer {
         try {
             System.loadLibrary(Core.NATIVE_LIBRARY_NAME);
         } catch (UnsatisfiedLinkError e) {
-            System.err.println("Failed to load OpenCV native library: " + e.getMessage());
-            System.err.println("Make sure OpenCV is installed and the Java native library is on java.library.path.");
+            System.err.println("OpenCV native library not found: " + e.getMessage());
             return;
         }
  
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
  
-        
-        server.createContext("/videoFront", new VideoHandler(frontVideo));
-        server.createContext("/videoRear",  new VideoHandler(rearVideo));
-        server.createContext("/videoSide",  new VideoHandler(sideVideo));
-        server.createContext("/videoBack",  new VideoHandler(backVideo));
- 
-        server.createContext("/warpFront",  new WarpHandler(frontVideo));
-        server.createContext("/warpRear",   new WarpHandler(rearVideo));
-        server.createContext("/warpSide",   new WarpHandler(sideVideo));
-        server.createContext("/warpBack",   new WarpHandler(backVideo));
- 
-        
-        server.createContext("/play", new PlayerPageHandler(videos, labels));
- 
         server.createContext("/stitch", new StitchHandler(videos));
+        server.createContext("/play",   new PlayerPageHandler());
  
-       
-        server.setExecutor(Executors.newFixedThreadPool(12));
+        server.setExecutor(Executors.newFixedThreadPool(4));
         server.start();
  
-        System.out.println("Panoramic streaming server started on http://localhost:" + port);
-        System.out.println("Open http://localhost:" + port + "/play for the panoramic view.");
+        System.out.println("Server started  →  http://localhost:" + port + "/play");
     }
  
-   
-    private static class VideoHandler implements HttpHandler {
-        private final Path videoFile;
- 
-        VideoHandler(Path videoFile) {
-            this.videoFile = videoFile;
-        }
- 
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String method = exchange.getRequestMethod();
-            if (!"GET".equalsIgnoreCase(method) && !"HEAD".equalsIgnoreCase(method)) {
-                exchange.sendResponseHeaders(405, -1);
-                return;
-            }
- 
-            long fileSize = Files.size(videoFile);
-            String rangeHeader = exchange.getRequestHeaders().getFirst("Range");
-            long start = 0;
-            long end = fileSize - 1;
-            int responseCode = 200;
- 
-            if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
-                responseCode = 206;
-                String[] parts = rangeHeader.substring(6).split("-", 2);
-                try {
-                    if (!parts[0].isEmpty()) {
-                        start = Long.parseLong(parts[0]);
-                    }
-                    if (parts.length > 1 && !parts[1].isEmpty()) {
-                        end = Long.parseLong(parts[1]);
-                    }
-                } catch (NumberFormatException e) {
-                    exchange.sendResponseHeaders(416, -1);
-                    return;
-                }
-                if (start > end || start < 0 || end >= fileSize) {
-                    exchange.sendResponseHeaders(416, -1);
-                    return;
-                }
-            }
- 
-            long contentLength = end - start + 1;
-            Headers responseHeaders = exchange.getResponseHeaders();
-            responseHeaders.set("Accept-Ranges", "bytes");
-            responseHeaders.set("Content-Type", probeContentType(videoFile));
-            if (responseCode == 206) {
-                responseHeaders.set("Content-Range", "bytes " + start + "-" + end + "/" + fileSize);
-            }
-            exchange.sendResponseHeaders(responseCode, method.equalsIgnoreCase("HEAD") ? -1 : contentLength);
- 
-            if ("HEAD".equalsIgnoreCase(method)) {
-                exchange.getResponseBody().close();
-                return;
-            }
- 
-            try (SeekableByteChannel channel = Files.newByteChannel(videoFile, StandardOpenOption.READ);
-                 OutputStream out = exchange.getResponseBody()) {
-                channel.position(start);
-                ByteBuffer buffer = ByteBuffer.allocate(BUFFER_SIZE);
-                long bytesRemaining = contentLength;
- 
-                while (bytesRemaining > 0) {
-                    buffer.clear();
-                    int bytesRead = channel.read(buffer);
-                    if (bytesRead < 0) {
-                        break;
-                    }
-                    buffer.flip();
-                    int bytesToWrite = (int) Math.min(bytesRead, bytesRemaining);
-                    out.write(buffer.array(), 0, bytesToWrite);
-                    bytesRemaining -= bytesToWrite;
-                }
-            }
-        }
- 
-        private String probeContentType(Path path) throws IOException {
-            String type = Files.probeContentType(path);
-            return type != null ? type : "application/octet-stream";
-        }
-    }
- 
-    
-    private static class WarpHandler implements HttpHandler {
-        private final Path videoFile;
- 
-        WarpHandler(Path videoFile) {
-            this.videoFile = videoFile;
-        }
- 
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            String method = exchange.getRequestMethod();
-            if (!"GET".equalsIgnoreCase(method)) {
-                exchange.sendResponseHeaders(405, -1);
-                return;
-            }
- 
-            VideoCapture capture = new VideoCapture(videoFile.toString());
-            try {
-                if (!capture.isOpened()) {
-                    exchange.sendResponseHeaders(500, -1);
-                    return;
-                }
- 
-                exchange.getResponseHeaders().set("Content-Type", "multipart/x-mixed-replace; boundary=frame");
-                exchange.sendResponseHeaders(200, 0);
- 
-                try (OutputStream out = exchange.getResponseBody()) {
-                    Mat frame = new Mat();
-                    Mat warped = new Mat();
-                    while (capture.read(frame) && !frame.empty()) {
-                        warpFrame(frame, warped);
-                        MatOfByte jpegBuffer = new MatOfByte();
-                        Imgcodecs.imencode(".jpg", warped, jpegBuffer);
-                        byte[] imageBytes = jpegBuffer.toArray();
- 
-                        String header = "--frame\r\n"
-                                + "Content-Type: image/jpeg\r\n"
-                                + "Content-Length: " + imageBytes.length + "\r\n\r\n";
-                        out.write(header.getBytes("UTF-8"));
-                        out.write(imageBytes);
-                        out.write("\r\n".getBytes("UTF-8"));
-                        out.flush();
-                    }
-                }
-            } finally {
-                capture.release();
-            }
-        }
- 
-        
-        private void warpFrame(Mat src, Mat dst) {
-            int width = src.cols();
-            int height = src.rows();
-            Point[] srcPts = new Point[]{
-                    new Point(0, 0),
-                    new Point(width - 1, 0),
-                    new Point(width - 1, height - 1),
-                    new Point(0, height - 1)
-            };
-            Point[] dstPts = new Point[]{
-                    new Point(width * 0.05, height * 0.15),
-                    new Point(width * 0.95, height * 0.05),
-                    new Point(width * 0.85, height * 0.95),
-                    new Point(width * 0.15, height * 0.85)
-            };
-            MatOfPoint2f source = new MatOfPoint2f(srcPts);
-            MatOfPoint2f destination = new MatOfPoint2f(dstPts);
-            Mat transform = Imgproc.getPerspectiveTransform(source, destination);
-            Imgproc.warpPerspective(src, dst, transform, new Size(width, height));
-        }
-    }
- 
-    
+    // =========================================================================
+    // STITCH HANDLER  —  feather-blend panorama only
+    // =========================================================================
     private static class StitchHandler implements HttpHandler {
         private final Path[] videoFiles;
+        StitchHandler(Path[] f) { this.videoFiles = f; }
  
-        StitchHandler(Path[] videoFiles) {
-            this.videoFiles = videoFiles;
-        }
- 
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
-            if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
-                exchange.sendResponseHeaders(405, -1);
-                return;
+        @Override public void handle(HttpExchange ex) throws IOException {
+            if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) {
+                ex.sendResponseHeaders(405, -1); return;
             }
  
-            VideoCapture[] captures = new VideoCapture[videoFiles.length];
+            VideoCapture[] caps = new VideoCapture[videoFiles.length];
             for (int i = 0; i < videoFiles.length; i++) {
-                captures[i] = new VideoCapture(videoFiles[i].toString());
-                if (!captures[i].isOpened()) {
-                    exchange.sendResponseHeaders(500, -1);
-                    return;
+                caps[i] = new VideoCapture(videoFiles[i].toString());
+                if (!caps[i].isOpened()) {
+                    ex.sendResponseHeaders(500, -1); return;
                 }
             }
  
-            exchange.getResponseHeaders().set("Content-Type", "multipart/x-mixed-replace; boundary=frame");
-            exchange.sendResponseHeaders(200, 0);
+            ex.getResponseHeaders().set("Content-Type", "multipart/x-mixed-replace; boundary=frame");
+            ex.sendResponseHeaders(200, 0);
  
-            try (OutputStream out = exchange.getResponseBody()) {
-                Mat[] frames = new Mat[videoFiles.length];
+            try (OutputStream out = ex.getResponseBody()) {
+                Mat[] frames  = new Mat[videoFiles.length];
                 Mat[] resized = new Mat[videoFiles.length];
                 for (int i = 0; i < videoFiles.length; i++) {
                     frames[i]  = new Mat();
                     resized[i] = new Mat();
                 }
  
-                
-                final int TARGET_HEIGHT = 360;
- 
                 while (true) {
-                    boolean anyFailed = false;
-                    for (int i = 0; i < captures.length; i++) {
-                        if (!captures[i].read(frames[i]) || frames[i].empty()) {
-                            anyFailed = true;
-                            break;
+                    boolean done = false;
+                    for (int i = 0; i < caps.length; i++) {
+                        if (!caps[i].read(frames[i]) || frames[i].empty()) {
+                            done = true; break;
                         }
-                      
-                        int newW = (int) ((double) frames[i].cols() / frames[i].rows() * TARGET_HEIGHT);
-                        Imgproc.resize(frames[i], resized[i], new Size(newW, TARGET_HEIGHT));
+                        Imgproc.resize(frames[i], resized[i], new Size(TARGET_WIDTH, TARGET_HEIGHT));
                     }
-                    if (anyFailed) break;
+                    if (done) break;
  
-                    
-                    java.util.List<Mat> matList = new java.util.ArrayList<>();
-                    for (Mat r : resized) matList.add(r);
-                    Mat stitched = new Mat();
-                    Core.hconcat(matList, stitched); 
- 
-                    MatOfByte jpegBuffer = new MatOfByte();
-                    Imgcodecs.imencode(".jpg", stitched, jpegBuffer);
-                    byte[] imageBytes = jpegBuffer.toArray();
- 
-                    String header = "--frame\r\n"
-                            + "Content-Type: image/jpeg\r\n"
-                            + "Content-Length: " + imageBytes.length + "\r\n\r\n";
-                    out.write(header.getBytes("UTF-8"));
-                    out.write(imageBytes);
-                    out.write("\r\n".getBytes("UTF-8"));
-                    out.flush();
+                    Mat panorama = featherStitch(resized);
+                    writeFrame(out, encodeJpeg(panorama));
+                    panorama.release();
                 }
             } finally {
-                for (VideoCapture c : captures) c.release();
+                for (VideoCapture c : caps) c.release();
             }
         }
     }
  
-    
+    // =========================================================================
+    // PLAYER PAGE  —  stitched panorama only, full-viewport
+    // =========================================================================
     private static class PlayerPageHandler implements HttpHandler {
  
-        
-        private final Path[]   videoFiles;
-        private final String[] cameraLabels;
- 
-        PlayerPageHandler(Path[] videoFiles, String[] cameraLabels) {
-            this.videoFiles   = videoFiles;
-            this.cameraLabels = cameraLabels;
-        }
- 
-        @Override
-        public void handle(HttpExchange exchange) throws IOException {
- 
-          
-            String[] warpSrcs  = {"/warpFront",  "/warpRear",  "/warpSide",  "/warpBack"};
-            String[] videoSrcs = {"/videoFront",  "/videoRear", "/videoSide", "/videoBack"};
- 
-
-            StringBuilder tiles = new StringBuilder();
-            for (int i = 0; i < videoFiles.length; i++) {
-                String mime = probeContentType(videoFiles[i]);
-                tiles.append(
-                
-                    "<div style='background:#111; border:2px solid #444; border-radius:8px; overflow:hidden;'>"
-                  +   "<div style='text-align:center; color:#aaa; font-size:0.85rem; padding:4px;" +
-                                  "background:#1a1a1a; letter-spacing:1px;'>" + cameraLabels[i] + "</div>"
-                  +   "<img src='" + warpSrcs[i] + "' alt='" + cameraLabels[i] + " warped stream' "
-                  +        "style='width:100%; display:block; border-bottom:2px solid #444;'>"
-                  +   "<video controls autoplay playsinline muted preload='metadata' "
-                  +          "style='width:100%; display:block;'>"
-                  +     "<source src='" + videoSrcs[i] + "' type='" + mime + "'>"
-                  +     "Your device does not support HTML5 video playback."
-                  +   "</video>"
-                  + "</div>"
-                );
-            }
- 
-           
-            String html = "<!DOCTYPE html>"
-                + "<html><head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">"
-                + "<title>Panoramic Camera View</title></head>"
-                + "<body style=\"margin:0; padding:8px; background:#000; color:#fff; font-family:Arial,sans-serif;\">"
-                + "<h2 style=\"text-align:center; margin-bottom:6px;\">360 Panoramic Stitched View</h2>"
-                
-                + "<img src='/stitch' alt='360 Stitched Panorama' "
-                +      "style='width:100%; max-width:1400px; display:block; margin:0 auto 12px auto;"
-                +             "border:2px solid #444; border-radius:6px;'>"
-                + "<h2 style=\"text-align:center; margin-bottom:10px;\">Individual Camera Views</h2>"
-
-                + "<div style=\"display:grid; grid-template-columns:1fr 1fr; gap:8px; max-width:1400px; margin:0 auto;\">"
-                +   tiles.toString()
+        @Override public void handle(HttpExchange ex) throws IOException {
+            String html = "<!DOCTYPE html><html lang='en'><head>"
+                + "<meta charset='UTF-8'>"
+                + "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+                + "<title>360° Panoramic View</title>"
+                + "<style>"
+                + "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }"
+                + "html, body { height: 100%; background: #0a0a0f; color: #e0e0e0;"
+                + "  font-family: 'Segoe UI', sans-serif; overflow: hidden; }"
+                + ".container { display: flex; flex-direction: column;"
+                + "  align-items: center; justify-content: center;"
+                + "  height: 100vh; padding: 16px; gap: 12px; }"
+                + "h1 { font-size: 1.4rem; font-weight: 300; letter-spacing: 2px;"
+                + "  color: #7ec8e3; text-align: center; flex-shrink: 0; }"
+                + ".pano-wrap { width: 100%; flex: 1; min-height: 0;"
+                + "  border: 1px solid #2a2a3a; border-radius: 8px; overflow: hidden;"
+                + "  display: flex; align-items: center; justify-content: center; }"
+                + ".pano-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; }"
+                + "</style>"
+                + "</head><body>"
+                + "<div class='container'>"
+                + "  <h1>360° Panoramic Camera System</h1>"
+                + "  <div class='pano-wrap'>"
+                + "    <img src='/stitch' alt='360° stitched panorama'>"
+                + "  </div>"
                 + "</div>"
                 + "</body></html>";
  
             byte[] bytes = html.getBytes("UTF-8");
-            exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
-            exchange.sendResponseHeaders(200, bytes.length);
-            try (OutputStream os = exchange.getResponseBody()) {
-                os.write(bytes);
-            }
+            ex.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
+            ex.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
+        }
+    }
+ 
+    // =========================================================================
+    //  CORE BLENDING  —  featherStitch
+    // =========================================================================
+    static Mat featherStitch(Mat[] frames) {
+        int N = frames.length;
+        int H = TARGET_HEIGHT;
+        int W = TARGET_WIDTH;
+ 
+        int overlap = Math.min(OVERLAP_PX, W / 4);
+        int panoW   = W + (N - 1) * (W - overlap);
+ 
+        Mat accumColor  = Mat.zeros(H, panoW, CvType.CV_32FC3);
+        Mat accumWeight = Mat.zeros(H, panoW, CvType.CV_32FC1);
+ 
+        for (int i = 0; i < N; i++) {
+            int xStart = i * (W - overlap);
+ 
+            Mat weight = buildFeatherMask(H, W, overlap);
+ 
+            Mat frameF = new Mat();
+            frames[i].convertTo(frameF, CvType.CV_32FC3);
+ 
+            Mat weight3 = new Mat();
+            List<Mat> ch = new ArrayList<>();
+            ch.add(weight); ch.add(weight); ch.add(weight);
+            Core.merge(ch, weight3);
+ 
+            Mat wFrame = new Mat();
+            Core.multiply(frameF, weight3, wFrame);
+ 
+            int xEnd    = Math.min(xStart + W, panoW);
+            int wActual = xEnd - xStart;
+ 
+            Mat colorRoi  = accumColor.submat(0, H, xStart, xEnd);
+            Mat weightRoi = accumWeight.submat(0, H, xStart, xEnd);
+ 
+            Mat wFrameCrop = wFrame.colRange(0, wActual);
+            Mat weightCrop = weight.colRange(0, wActual);
+ 
+            Core.add(colorRoi,  wFrameCrop, colorRoi);
+            Core.add(weightRoi, weightCrop, weightRoi);
+ 
+            colorRoi.release(); weightRoi.release();
+            frameF.release(); weight.release(); weight3.release();
+            wFrame.release();
         }
  
-        private String probeContentType(Path path) throws IOException {
-            String type = Files.probeContentType(path);
-            return type != null ? type : "application/octet-stream";
+        Mat safeW = new Mat();
+        Core.max(accumWeight, new Scalar(1e-6), safeW);
+ 
+        Mat safeW3 = new Mat();
+        List<Mat> wch = new ArrayList<>();
+        wch.add(safeW); wch.add(safeW); wch.add(safeW);
+        Core.merge(wch, safeW3);
+ 
+        Mat blended = new Mat();
+        Core.divide(accumColor, safeW3, blended);
+ 
+        Mat result = new Mat();
+        blended.convertTo(result, CvType.CV_8UC3);
+ 
+        accumColor.release(); accumWeight.release();
+        safeW.release(); safeW3.release(); blended.release();
+ 
+        return result;
+    }
+ 
+    static Mat buildFeatherMask(int H, int W, int overlap) {
+        Mat mask = new Mat(H, W, CvType.CV_32FC1, new Scalar(1.0));
+        for (int x = 0; x < overlap; x++) {
+            float alpha = (float) x / overlap;
+            for (int y = 0; y < H; y++) {
+                mask.put(y, x,          new float[]{ alpha });
+                mask.put(y, W - 1 - x,  new float[]{ alpha });
+            }
         }
+        return mask;
+    }
+ 
+    // =========================================================================
+    // SHARED HELPERS
+    // =========================================================================
+    static byte[] encodeJpeg(Mat frame) {
+        MatOfByte buf    = new MatOfByte();
+        MatOfInt  params = new MatOfInt(Imgcodecs.IMWRITE_JPEG_QUALITY, 88);
+        Imgcodecs.imencode(".jpg", frame, buf, params);
+        return buf.toArray();
+    }
+ 
+    static void writeFrame(OutputStream out, byte[] jpeg) throws IOException {
+        String header = "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
+                      + jpeg.length + "\r\n\r\n";
+        out.write(header.getBytes("UTF-8"));
+        out.write(jpeg);
+        out.write("\r\n".getBytes("UTF-8"));
+        out.flush();
     }
 }
