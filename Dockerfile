@@ -3,7 +3,7 @@ FROM eclipse-temurin:17
 # Install dependencies
 RUN apt-get update && apt-get install -y \
     wget \
-    libopencv4.5-java \
+    libopencv-java \
     && apt-get clean
 
 # Find and set OpenCV jar path
