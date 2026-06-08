@@ -1,5 +1,5 @@
 FROM eclipse-temurin:17
-COPY . /app
 WORKDIR /app
-RUN make
+COPY . .
+RUN javac VideoStreamingServer.java
 CMD ["java", "VideoStreamingServer"]
