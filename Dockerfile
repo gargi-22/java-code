@@ -6,9 +6,6 @@ RUN apt-get update && apt-get install -y \
     libopencv-java \
     && apt-get clean
 
-# Find and set OpenCV jar path
-RUN find / -name "opencv*.jar" 2>/dev/null
-
 WORKDIR /app
 COPY . .
 
