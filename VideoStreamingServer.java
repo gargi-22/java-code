@@ -55,19 +55,17 @@ public class VideoStreamingServer {
         server.createContext("/stitch", new StitchHandler(videos));
         server.createContext("/play",   new PlayerPageHandler());
         server.createContext("/meta",   new MetaHandler(port));
-        server.createContext("/",       new RootRedirectHandler());  // redirect root → /play
+        server.createContext("/",       new RootRedirectHandler());
 
         server.setExecutor(Executors.newFixedThreadPool(4));
         server.start();
 
-        // ── Print the public URL (Render sets RENDER_EXTERNAL_URL automatically) ──
         String publicUrl = System.getenv("RENDER_EXTERNAL_URL");
         if (publicUrl == null || publicUrl.isEmpty()) {
             publicUrl = "http://localhost:" + port;
         }
         System.out.println("=================================================");
         System.out.println("  Player  →  " + publicUrl + "/play");
-        System.out.println("  Stream  →  " + publicUrl + "/stitch");
         System.out.println("  Meta    →  " + publicUrl + "/meta");
         System.out.println("=================================================");
     }
@@ -102,7 +100,7 @@ public class VideoStreamingServer {
 
             String host = ex.getRequestHeaders().getFirst("Host");
             if (host == null || host.isEmpty()) host = "localhost:" + port;
-            String baseUrl = "https://" + host;   // Render uses HTTPS
+            String baseUrl = "https://" + host;
 
             int N       = 4;
             int overlap = Math.min(OVERLAP_PX, TARGET_WIDTH / 4);
@@ -206,7 +204,7 @@ public class VideoStreamingServer {
     }
 
     // =========================================================================
-    //  PLAYER PAGE  —  shows public URL + stitched panorama
+    //  PLAYER PAGE  —  shows only Player + Meta links (no video)
     // =========================================================================
 
     private static class PlayerPageHandler implements HttpHandler {
@@ -214,17 +212,15 @@ public class VideoStreamingServer {
         @Override
         public void handle(HttpExchange ex) throws IOException {
 
-            // Build the public base URL from the Host header (works on Render + localhost)
-            String host    = ex.getRequestHeaders().getFirst("Host");
+            String host   = ex.getRequestHeaders().getFirst("Host");
             boolean secure = (host != null && !host.contains("localhost"));
             String scheme  = secure ? "https" : "http";
             String baseUrl = (host != null && !host.isEmpty())
                              ? scheme + "://" + host
                              : "http://localhost";
 
-            String playUrl   = baseUrl + "/play";
-            String stitchUrl = baseUrl + "/stitch";
-            String metaUrl   = baseUrl + "/meta";
+            String playUrl = baseUrl + "/play";
+            String metaUrl = baseUrl + "/meta";
 
             String html = "<!DOCTYPE html><html lang='en'><head>"
                 + "<meta charset='UTF-8'>"
@@ -236,51 +232,39 @@ public class VideoStreamingServer {
                 + "  font-family: 'Segoe UI', sans-serif; }"
                 + ".container { display: flex; flex-direction: column;"
                 + "  align-items: center; justify-content: center;"
-                + "  min-height: 100vh; padding: 16px; gap: 14px; }"
+                + "  min-height: 100vh; padding: 24px; gap: 20px; }"
                 + "h1 { font-size: 1.4rem; font-weight: 300; letter-spacing: 2px;"
                 + "  color: #7ec8e3; text-align: center; }"
-                + ".pano-wrap { width: 100%; max-height: 70vh;"
-                + "  border: 1px solid #2a2a3a; border-radius: 8px; overflow: hidden;"
-                + "  display: flex; align-items: center; justify-content: center; }"
-                + ".pano-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; }"
-                // URL info box
-                + ".url-box { width: 100%; max-width: 860px; background: #12121c;"
-                + "  border: 1px solid #2a2a3a; border-radius: 8px; padding: 14px 18px;"
-                + "  font-size: 0.82rem; color: #aaa; }"
+                + ".url-box { width: 100%; max-width: 600px; background: #12121c;"
+                + "  border: 1px solid #2a2a3a; border-radius: 8px; padding: 20px 24px; }"
                 + ".url-box h2 { font-size: 0.75rem; font-weight: 600; letter-spacing: 1.5px;"
-                + "  color: #7ec8e3; text-transform: uppercase; margin-bottom: 10px; }"
-                + ".url-row { display: flex; align-items: center; gap: 10px; margin: 5px 0; }"
-                + ".url-label { min-width: 60px; color: #555; font-size: 0.75rem; }"
-                + ".url-link { color: #7ec8e3; text-decoration: none; word-break: break-all; }"
+                + "  color: #7ec8e3; text-transform: uppercase; margin-bottom: 14px; }"
+                + ".url-row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }"
+                + ".url-label { min-width: 60px; color: #666; font-size: 0.78rem; }"
+                + ".url-link { color: #7ec8e3; text-decoration: none; word-break: break-all;"
+                + "  font-size: 0.85rem; }"
                 + ".url-link:hover { text-decoration: underline; }"
                 + ".copy-btn { cursor: pointer; background: #1e1e2e; border: 1px solid #3a3a5a;"
-                + "  color: #aaa; border-radius: 4px; padding: 2px 8px; font-size: 0.72rem;"
-                + "  white-space: nowrap; }"
+                + "  color: #aaa; border-radius: 4px; padding: 3px 10px; font-size: 0.72rem;"
+                + "  white-space: nowrap; transition: background 0.15s; }"
                 + ".copy-btn:hover { background: #2a2a3a; color: #fff; }"
                 + "</style>"
                 + "</head><body>"
                 + "<div class='container'>"
                 + "  <h1>360\u00b0 Panoramic Camera System</h1>"
-                + "  <div class='pano-wrap'>"
-                + "    <img src='/stitch' alt='360\u00b0 stitched panorama'>"
-                + "  </div>"
-                // ── URL info panel ──
                 + "  <div class='url-box'>"
                 + "    <h2>Endpoint URLs</h2>"
+                // Player row
                 + "    <div class='url-row'>"
                 + "      <span class='url-label'>Player</span>"
                 + "      <a class='url-link' href='" + playUrl + "' target='_blank'>" + playUrl + "</a>"
-                + "      <button class='copy-btn' onclick=\"navigator.clipboard.writeText('" + playUrl + "')\">Copy</button>"
+                + "      <button class='copy-btn' onclick=\"navigator.clipboard.writeText('" + playUrl + "').then(() => this.textContent='Copied!').catch(()=>{}); setTimeout(()=>this.textContent='Copy',1500)\">Copy</button>"
                 + "    </div>"
-                + "    <div class='url-row'>"
-                + "      <span class='url-label'>Stream</span>"
-                + "      <a class='url-link' href='" + stitchUrl + "' target='_blank'>" + stitchUrl + "</a>"
-                + "      <button class='copy-btn' onclick=\"navigator.clipboard.writeText('" + stitchUrl + "')\">Copy</button>"
-                + "    </div>"
+                // Meta row
                 + "    <div class='url-row'>"
                 + "      <span class='url-label'>Meta</span>"
                 + "      <a class='url-link' href='" + metaUrl + "' target='_blank'>" + metaUrl + "</a>"
-                + "      <button class='copy-btn' onclick=\"navigator.clipboard.writeText('" + metaUrl + "')\">Copy</button>"
+                + "      <button class='copy-btn' onclick=\"navigator.clipboard.writeText('" + metaUrl + "').then(() => this.textContent='Copied!').catch(()=>{}); setTimeout(()=>this.textContent='Copy',1500)\">Copy</button>"
                 + "    </div>"
                 + "  </div>"
                 + "</div>"
