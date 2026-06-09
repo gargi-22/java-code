@@ -84,7 +84,7 @@ public class VideoStreamingServer {
  
         server.createContext("/stitch", new StitchHandler(videos));   // raw MJPEG stream
 
-        server.createContext("/player", new StreamOnlyPageHandler()); // just the video, no UI
+        // server.createContext("/player", new StreamOnlyPageHandler()); // just the video, no UI
 
         server.createContext("/play",   new PlayerPageHandler());      // links-only dashboard
 
@@ -102,9 +102,9 @@ public class VideoStreamingServer {
  
         System.out.println("=================================================");
 
-        System.out.println("  Dashboard  →  " + publicUrl + "/play");
+        // System.out.println("  Dashboard  →  " + publicUrl + "/play");
 
-        System.out.println("  Player     →  " + publicUrl + "/player  (stream only)");
+        // System.out.println("  Player     →  " + publicUrl + "/player  (stream only)");
 
         System.out.println("  Meta       →  " + publicUrl + "/meta");
 
@@ -140,35 +140,35 @@ public class VideoStreamingServer {
 
     // =========================================================================
  
-    private static class StreamOnlyPageHandler implements HttpHandler {
+    // private static class StreamOnlyPageHandler implements HttpHandler {
 
-        @Override
+    //     @Override
 
-        public void handle(HttpExchange ex) throws IOException {
+    //     public void handle(HttpExchange ex) throws IOException {
 
-            String html = "<!DOCTYPE html><html lang='en'><head>"
+    //         String html = "<!DOCTYPE html><html lang='en'><head>"
 
-                + "<meta charset='UTF-8'>"
+    //             + "<meta charset='UTF-8'>"
 
-                + "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+    //             + "<meta name='viewport' content='width=device-width,initial-scale=1'>"
 
-                + "<title>Live 360\u00b0 Stream</title>"
+    //             + "<title>Live 360\u00b0 Stream</title>"
 
-                + "<style>"
+    //             + "<style>"
 
-                + "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }"
+    //             + "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }"
 
-                + "html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }"
+    //             + "html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }"
 
-                + "img { display: block; width: 100%; height: 100%; object-fit: contain; }"
+    //             + "img { display: block; width: 100%; height: 100%; object-fit: contain; }"
 
-                + "</style>"
+    //             + "</style>"
 
-                + "</head><body>"
+    //             + "</head><body>"
 
-                + "<img src='/stitch' alt='Live 360\u00b0 panorama stream'>"
+    //             + "<img src='/stitch' alt='Live 360\u00b0 panorama stream'>"
 
-                + "</body></html>";
+    //             + "</body></html>";
  
             byte[] bytes = html.getBytes("UTF-8");
 
@@ -204,7 +204,7 @@ public class VideoStreamingServer {
 
                              ? scheme + "://" + host : "http://localhost";
  
-            String playerUrl = baseUrl + "/player";
+            // String playerUrl = baseUrl + "/player";
 
             String metaUrl   = baseUrl + "/meta";
  
@@ -270,23 +270,23 @@ public class VideoStreamingServer {
 
                 + "  <h1>360\u00b0 Panoramic Camera System</h1>"
 
-                + "  <div class='url-box'>"
+                // + "  <div class='url-box'>"
 
-                + "    <h2>Endpoint URLs</h2>"
+                // + "    <h2>Endpoint URLs</h2>"
 
-                + "    <div class='url-row'>"
+                // + "    <div class='url-row'>"
 
-                + "      <span class='url-label'>Player</span>"
+                // + "      <span class='url-label'>Player</span>"
 
-                + "      <a class='url-link' href='" + playerUrl + "' target='_blank'>" + playerUrl + "</a>"
+                // + "      <a class='url-link' href='" + playerUrl + "' target='_blank'>" + playerUrl + "</a>"
 
-                + "      <button class='copy-btn'"
+                // + "      <button class='copy-btn'"
 
-                + "        onclick=\"navigator.clipboard.writeText('" + playerUrl + "')"
+                // + "        onclick=\"navigator.clipboard.writeText('" + playerUrl + "')"
 
-                + "          .then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)})\">Copy</button>"
+                // + "          .then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)})\">Copy</button>"
 
-                + "    </div>"
+                // + "    </div>"
 
                 + "    <div class='url-row'>"
 
@@ -374,7 +374,7 @@ public class VideoStreamingServer {
 
             sb.append("    \"height\": ").append(panoH).append(",\n");
 
-            sb.append("    \"player_url\": \"").append(baseUrl).append("/player\",\n");
+            // sb.append("    \"player_url\": \"").append(baseUrl).append("/player\",\n");
 
             sb.append("    \"stream_url\": \"").append(baseUrl).append("/stitch\"\n");
 
