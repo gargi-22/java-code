@@ -65,10 +65,10 @@ public class VideoStreamingServer {
         if (publicUrl == null || publicUrl.isEmpty()) publicUrl = "http://localhost:" + port;
 
         System.out.println("=================================================");
-        System.out.println("  Dashboard  →  " + publicUrl + "/play");
+       
         System.out.println("  Player     →  " + publicUrl + "/player  (stream only)");
         System.out.println("  Meta       →  " + publicUrl + "/meta");
-        System.out.println("  Stream     →  " + publicUrl + "/stitch  (raw MJPEG)");
+        
         System.out.println("=================================================");
     }
 
@@ -101,7 +101,6 @@ public class VideoStreamingServer {
                 + "img { display: block; width: 100%; height: 100%; object-fit: contain; }"
                 + "</style>"
                 + "</head><body>"
-                + "<img src='/stitch' alt='Live 360\u00b0 panorama stream'>"
                 + "</body></html>";
 
             byte[] bytes = html.getBytes("UTF-8");
@@ -164,11 +163,6 @@ public class VideoStreamingServer {
                 + ".copy-btn:hover { background: #2a2a3a; color: #fff; }"
                 + "</style>"
                 + "</head><body>"
-                + "<div class='container'>"
-                + "  <h1>360\u00b0 Panoramic Camera System</h1>"
-                + "  <div class='pano-wrap'>"
-                + "    <img src='/stitch' alt='360\u00b0 live panorama'>"
-                + "  </div>"
                 + "  <div class='url-box'>"
                 + "    <h2>Endpoint URLs</h2>"
                 // Player → /player (stream-only page)
