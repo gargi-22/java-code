@@ -48,7 +48,7 @@ public class VideoStreamingServer {
  
        Path rearVideo  = Paths.get("rear_d.mp4");
  
-       Path sideVideo  = Paths.get("left_d.mp4");
+       Path sideVideo  = Paths.get("left_d (1).mp4");
  
        Path backVideo  = Paths.get("front_d.mp4");
  
