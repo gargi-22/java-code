@@ -102,7 +102,7 @@ public class VideoStreamingServer {
  
         System.out.println("=================================================");
 
-        // System.out.println("  Dashboard  →  " + publicUrl + "/play");
+        System.out.println("  Dashboard  →  " + publicUrl + "/play");
 
         // System.out.println("  Player     →  " + publicUrl + "/player  (stream only)");
 
@@ -170,17 +170,17 @@ public class VideoStreamingServer {
 
     //             + "</body></html>";
  
-            byte[] bytes = html.getBytes("UTF-8");
+    //         byte[] bytes = html.getBytes("UTF-8");
 
-            ex.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
+    //         ex.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
 
-            ex.sendResponseHeaders(200, bytes.length);
+    //         ex.sendResponseHeaders(200, bytes.length);
 
-            try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
+    //         try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
 
-        }
+    //     }
 
-    }
+    // }
  
     // =========================================================================
 
