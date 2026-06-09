@@ -28,9 +28,9 @@ public class VideoStreamingServer{
     // =========================================================================
     public static void main(String[] args) throws IOException {
  
-        Path frontVideo = Paths.get("right.mov");
-        Path rearVideo  = Paths.get("rear.mov");
-        Path sideVideo  = Paths.get("left.mov");
+        Path frontVideo = Paths.get("right (1).mov");
+        Path rearVideo  = Paths.get("rear (1).mov");
+        Path sideVideo  = Paths.get("left (1).mov");
         Path backVideo  = Paths.get("Front.mp4");
  
         Path[] videos = { frontVideo, rearVideo, sideVideo, backVideo };
