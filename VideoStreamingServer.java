@@ -52,9 +52,10 @@ public class VideoStreamingServer {
 
         HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
 
-        server.createContext("/stitch", new StitchHandler(videos));   // MJPEG stream
-        server.createContext("/play",   new PlayerPageHandler());      // HTML page with live video
-        server.createContext("/meta",   new MetaHandler(port));        // JSON — player_url → /play
+        server.createContext("/stitch", new StitchHandler(videos));   // raw MJPEG stream
+        server.createContext("/player", new StreamOnlyPageHandler()); // just the video, no UI
+        server.createContext("/play",   new PlayerPageHandler());      // full dashboard page
+        server.createContext("/meta",   new MetaHandler(port));        // JSON metadata
         server.createContext("/",       new RootRedirectHandler());    // root → /play
 
         server.setExecutor(Executors.newFixedThreadPool(8));
@@ -64,9 +65,10 @@ public class VideoStreamingServer {
         if (publicUrl == null || publicUrl.isEmpty()) publicUrl = "http://localhost:" + port;
 
         System.out.println("=================================================");
-        System.out.println("  Player (live video)  →  " + publicUrl + "/play");
-        System.out.println("  Meta   (JSON)         →  " + publicUrl + "/meta");
-        System.out.println("  Stream (raw MJPEG)    →  " + publicUrl + "/stitch");
+        System.out.println("  Dashboard  →  " + publicUrl + "/play");
+        System.out.println("  Player     →  " + publicUrl + "/player  (stream only)");
+        System.out.println("  Meta       →  " + publicUrl + "/meta");
+        System.out.println("  Stream     →  " + publicUrl + "/stitch  (raw MJPEG)");
         System.out.println("=================================================");
     }
 
@@ -83,7 +85,34 @@ public class VideoStreamingServer {
     }
 
     // =========================================================================
-    //  PLAYER PAGE  —  full-viewport live stitched video + 2 endpoint links
+    //  STREAM-ONLY PAGE  —  /player  just the live video, full viewport, no UI
+    // =========================================================================
+
+    private static class StreamOnlyPageHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange ex) throws IOException {
+            String html = "<!DOCTYPE html><html lang='en'><head>"
+                + "<meta charset='UTF-8'>"
+                + "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+                + "<title>Live 360\u00b0 Stream</title>"
+                + "<style>"
+                + "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }"
+                + "html, body { width: 100%; height: 100%; background: #000; overflow: hidden; }"
+                + "img { display: block; width: 100%; height: 100%; object-fit: contain; }"
+                + "</style>"
+                + "</head><body>"
+                + "<img src='/stitch' alt='Live 360\u00b0 panorama stream'>"
+                + "</body></html>";
+
+            byte[] bytes = html.getBytes("UTF-8");
+            ex.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
+            ex.sendResponseHeaders(200, bytes.length);
+            try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
+        }
+    }
+
+    // =========================================================================
+    //  DASHBOARD PAGE  —  /play  full page: title + video + endpoint links
     // =========================================================================
 
     private static class PlayerPageHandler implements HttpHandler {
@@ -91,15 +120,15 @@ public class VideoStreamingServer {
         @Override
         public void handle(HttpExchange ex) throws IOException {
 
-            // Build public base URL from Host header (works on Render + localhost)
             String host    = ex.getRequestHeaders().getFirst("Host");
             boolean secure = (host != null && !host.contains("localhost"));
             String scheme  = secure ? "https" : "http";
             String baseUrl = (host != null && !host.isEmpty())
                              ? scheme + "://" + host : "http://localhost";
 
-            String playUrl = baseUrl + "/play";
-            String metaUrl = baseUrl + "/meta";
+            // Player URL now points to /player (stream-only page)
+            String playerUrl = baseUrl + "/player";
+            String metaUrl   = baseUrl + "/meta";
 
             String html = "<!DOCTYPE html><html lang='en'><head>"
                 + "<meta charset='UTF-8'>"
@@ -114,13 +143,11 @@ public class VideoStreamingServer {
                 + "  min-height: 100vh; padding: 16px; gap: 14px; }"
                 + "h1 { font-size: 1.4rem; font-weight: 300; letter-spacing: 2px;"
                 + "  color: #7ec8e3; text-align: center; flex-shrink: 0; }"
-                // Video wrapper — takes remaining vertical space
                 + ".pano-wrap { width: 100%; flex: 1; min-height: 0; max-height: 70vh;"
                 + "  border: 1px solid #2a2a3a; border-radius: 8px; overflow: hidden;"
                 + "  display: flex; align-items: center; justify-content: center;"
                 + "  background: #05050a; }"
                 + ".pano-wrap img { width: 100%; height: 100%; object-fit: contain; display: block; }"
-                // Endpoint box — only Player + Meta
                 + ".url-box { width: 100%; max-width: 700px; background: #12121c;"
                 + "  border: 1px solid #2a2a3a; border-radius: 8px; padding: 16px 20px;"
                 + "  flex-shrink: 0; }"
@@ -139,22 +166,20 @@ public class VideoStreamingServer {
                 + "</head><body>"
                 + "<div class='container'>"
                 + "  <h1>360\u00b0 Panoramic Camera System</h1>"
-
-                // ── Live stitched video stream ──
                 + "  <div class='pano-wrap'>"
-                + "    <img src='/stitch' alt='360\u00b0 live panorama stream'>"
+                + "    <img src='/stitch' alt='360\u00b0 live panorama'>"
                 + "  </div>"
-
-                // ── Endpoint URLs (Player + Meta only) ──
                 + "  <div class='url-box'>"
                 + "    <h2>Endpoint URLs</h2>"
+                // Player → /player (stream-only page)
                 + "    <div class='url-row'>"
                 + "      <span class='url-label'>Player</span>"
-                + "      <a class='url-link' href='" + playUrl + "' target='_blank'>" + playUrl + "</a>"
+                + "      <a class='url-link' href='" + playerUrl + "' target='_blank'>" + playerUrl + "</a>"
                 + "      <button class='copy-btn'"
-                + "        onclick=\"navigator.clipboard.writeText('" + playUrl + "')"
+                + "        onclick=\"navigator.clipboard.writeText('" + playerUrl + "')"
                 + "          .then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)})\">Copy</button>"
                 + "    </div>"
+                // Meta → /meta
                 + "    <div class='url-row'>"
                 + "      <span class='url-label'>Meta</span>"
                 + "      <a class='url-link' href='" + metaUrl + "' target='_blank'>" + metaUrl + "</a>"
@@ -174,7 +199,7 @@ public class VideoStreamingServer {
     }
 
     // =========================================================================
-    //  META HANDLER  —  JSON with player_url pointing to /play (live video page)
+    //  META HANDLER  —  player_url → /player (stream-only), stream_url → /stitch
     // =========================================================================
 
     private static class MetaHandler implements HttpHandler {
@@ -207,9 +232,9 @@ public class VideoStreamingServer {
             sb.append("  \"panorama\": {\n");
             sb.append("    \"width\": ").append(panoW).append(",\n");
             sb.append("    \"height\": ").append(panoH).append(",\n");
-            // player_url → /play  which shows the live stitched video
-            sb.append("    \"player_url\": \"").append(baseUrl).append("/play\",\n");
-            // stream_url → /stitch  the raw MJPEG for embedding elsewhere
+            // player_url → /player  (stream-only page, just the video)
+            sb.append("    \"player_url\": \"").append(baseUrl).append("/player\",\n");
+            // stream_url → /stitch  (raw MJPEG)
             sb.append("    \"stream_url\": \"").append(baseUrl).append("/stitch\"\n");
             sb.append("  },\n");
             sb.append("  \"cameras\": {\n");
@@ -242,7 +267,7 @@ public class VideoStreamingServer {
     }
 
     // =========================================================================
-    //  STITCH HANDLER  —  feather-blend MJPEG stream
+    //  STITCH HANDLER  —  raw MJPEG stream
     // =========================================================================
 
     private static class StitchHandler implements HttpHandler {
