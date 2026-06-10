@@ -44,13 +44,13 @@ public class VideoStreamingServer {
  
    public static void main(String[] args) throws IOException {
  
-       Path frontVideo = Paths.get("right_d.mp4");
+       Path frontVideo = Paths.get("right_g.mov");
  
-       Path rearVideo  = Paths.get("rear_d.mp4");
+       Path rearVideo  = Paths.get("rear_g.mov");
  
-       Path sideVideo  = Paths.get("left_d (1).mp4");
+       Path sideVideo  = Paths.get("left_g.mov");
  
-       Path backVideo  = Paths.get("front_d.mp4");
+       Path backVideo  = Paths.get("Front_g.mp4");
  
        Path[] videos = { frontVideo, rearVideo, sideVideo, backVideo };
  
