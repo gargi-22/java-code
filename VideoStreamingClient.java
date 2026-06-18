@@ -18,20 +18,53 @@ public class VideoStreamingClient {
     private static final int DEFAULT_CHUNK_SIZE = 256 * 1024;
     private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(20);
 
-    public static void main(String[] args) throws IOException, InterruptedException {
+    public static void main(String[] args) {
         if (args.length < 2) {
             System.out.println("Usage: java VideoStreamingClient <video-url> <output-file> [chunk-size-bytes]");
             System.out.println("Example: java VideoStreamingClient http://localhost:8080/video downloaded.mp4 262144");
             return;
         }
 
-        URI videoUri = URI.create(args[0]);
+        URI videoUri;
+        try {
+            videoUri = URI.create(args[0]);
+        } catch (IllegalArgumentException e) {
+            System.err.println("Invalid URL: " + args[0] + " (" + e.getMessage() + ")");
+            return;
+        }
+
         Path outputFile = Paths.get(args[1]);
-        int chunkSize = args.length > 2 ? Integer.parseInt(args[2]) : DEFAULT_CHUNK_SIZE;
+
+        int chunkSize;
+        if (args.length > 2) {
+            try {
+                chunkSize = Integer.parseInt(args[2]);
+            } catch (NumberFormatException e) {
+                System.err.println("Invalid chunk-size-bytes: " + args[2] + " (must be a positive integer)");
+                return;
+            }
+        } else {
+            chunkSize = DEFAULT_CHUNK_SIZE;
+        }
 
         if (chunkSize <= 0) {
-            throw new IllegalArgumentException("chunk-size-bytes must be positive");
+            System.err.println("chunk-size-bytes must be positive, got: " + chunkSize);
+            return;
         }
+
+        try {
+            downloadVideo(videoUri, outputFile, chunkSize);
+        } catch (IOException e) {
+            System.err.println("Download failed: " + e.getMessage());
+            System.exit(1);
+        } catch (InterruptedException e) {
+            System.err.println("Download interrupted.");
+            Thread.currentThread().interrupt();
+            System.exit(1);
+        }
+    }
+
+    private static void downloadVideo(URI videoUri, Path outputFile, int chunkSize) throws IOException, InterruptedException {
 
         if (Files.exists(outputFile)) {
             System.out.println("Output file already exists. Overwriting: " + outputFile);
@@ -86,6 +119,7 @@ public class VideoStreamingClient {
 
         System.out.println("\nDownload complete.");
     }
+
 
     private static long fetchContentLength(HttpClient client, URI uri) throws IOException, InterruptedException {
         HttpRequest request = HttpRequest.newBuilder()

@@ -42,7 +42,7 @@ public class VideoStreamingServer {
  
     // =========================================================================
 
-    public static void main(String[] args) throws IOException {
+    public static void main(String[] args) {
  
         Path frontVideo = Paths.get("right (1).mov");
 
@@ -66,7 +66,27 @@ public class VideoStreamingServer {
 
         }
  
-        int port = args.length > 0 ? Integer.parseInt(args[0]) : DEFAULT_PORT;
+        int port;
+
+        if (args.length > 0) {
+
+            try {
+
+                port = Integer.parseInt(args[0]);
+
+            } catch (NumberFormatException e) {
+
+                System.err.println("Invalid port number: " + args[0]);
+
+                return;
+
+            }
+
+        } else {
+
+            port = DEFAULT_PORT;
+
+        }
  
         try {
 
@@ -80,7 +100,19 @@ public class VideoStreamingServer {
 
         }
  
-        HttpServer server = HttpServer.create(new InetSocketAddress(port), 0);
+        HttpServer server;
+
+        try {
+
+            server = HttpServer.create(new InetSocketAddress(port), 0);
+
+        } catch (IOException e) {
+
+            System.err.println("Failed to bind server to port " + port + ": " + e.getMessage());
+
+            return;
+
+        }
  
         server.createContext("/stitch", new StitchHandler(videos));   // raw MJPEG stream
 
@@ -454,17 +486,39 @@ public class VideoStreamingServer {
  
             VideoCapture[] caps = new VideoCapture[videoFiles.length];
 
-            for (int i = 0; i < videoFiles.length; i++) {
+            try {
 
-                caps[i] = new VideoCapture(videoFiles[i].toString());
+                for (int i = 0; i < videoFiles.length; i++) {
 
-                if (!caps[i].isOpened()) {
+                    caps[i] = new VideoCapture(videoFiles[i].toString());
 
-                    ex.sendResponseHeaders(500, -1);
+                    if (!caps[i].isOpened()) {
 
-                    return;
+                        System.err.println("Failed to open video capture: " + videoFiles[i]);
+
+                        for (int j = 0; j < i; j++) caps[j].release();
+
+                        byte[] errBody = ("Failed to open video: " + videoFiles[i]).getBytes("UTF-8");
+
+                        ex.getResponseHeaders().set("Content-Type", "text/plain");
+
+                        ex.sendResponseHeaders(500, errBody.length);
+
+                        try (OutputStream errOut = ex.getResponseBody()) { errOut.write(errBody); }
+
+                        return;
+
+                    }
 
                 }
+
+            } catch (Exception openEx) {
+
+                System.err.println("Error initializing video captures: " + openEx.getMessage());
+
+                for (VideoCapture c : caps) { if (c != null) c.release(); }
+
+                throw new IOException("Video capture initialization failed", openEx);
 
             }
  
@@ -515,6 +569,16 @@ public class VideoStreamingServer {
                     panorama.release();
 
                 }
+
+            } catch (IOException streamEx) {
+
+                System.err.println("Stream interrupted (client likely disconnected): " + streamEx.getMessage());
+
+            } catch (Exception processingEx) {
+
+                System.err.println("Error during frame processing: " + processingEx.getMessage());
+
+                processingEx.printStackTrace(System.err);
 
             } finally {
 
@@ -656,7 +720,15 @@ public class VideoStreamingServer {
 
         MatOfInt  params = new MatOfInt(Imgcodecs.IMWRITE_JPEG_QUALITY, 88);
 
-        Imgcodecs.imencode(".jpg", frame, buf, params);
+        boolean success = Imgcodecs.imencode(".jpg", frame, buf, params);
+
+        if (!success) {
+
+            throw new RuntimeException("Failed to encode frame as JPEG (frame size: "
+
+                + frame.cols() + "x" + frame.rows() + ", type: " + frame.type() + ")");
+
+        }
 
         return buf.toArray();
 
