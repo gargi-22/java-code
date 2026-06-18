@@ -39,6 +39,10 @@ public class VideoStreamingServer {
     private static final int TARGET_WIDTH  = 640;
 
     private static final int OVERLAP_PX    = 80;
+
+    private static final String ALLOWED_CORS_ORIGIN =
+        System.getenv("CORS_ALLOWED_ORIGIN") != null
+            ? System.getenv("CORS_ALLOWED_ORIGIN") : "";
  
     // =========================================================================
 
@@ -66,7 +70,31 @@ public class VideoStreamingServer {
 
         }
  
-        int port = args.length > 0 ? Integer.parseInt(args[0]) : DEFAULT_PORT;
+        int port = DEFAULT_PORT;
+
+        if (args.length > 0) {
+
+            try {
+
+                port = Integer.parseInt(args[0]);
+
+            } catch (NumberFormatException e) {
+
+                System.err.println("Invalid port number: " + args[0]);
+
+                return;
+
+            }
+
+            if (port < 1 || port > 65535) {
+
+                System.err.println("Port must be between 1 and 65535: " + port);
+
+                return;
+
+            }
+
+        }
  
         try {
 
@@ -172,6 +200,8 @@ public class VideoStreamingServer {
  
             byte[] bytes = html.getBytes("UTF-8");
 
+            addSecurityHeaders(ex);
+
             ex.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
 
             ex.sendResponseHeaders(200, bytes.length);
@@ -194,7 +224,7 @@ public class VideoStreamingServer {
 
         public void handle(HttpExchange ex) throws IOException {
  
-            String host    = ex.getRequestHeaders().getFirst("Host");
+            String host    = sanitizeHost(ex.getRequestHeaders().getFirst("Host"));
 
             boolean secure = (host != null && !host.contains("localhost"));
 
@@ -204,9 +234,11 @@ public class VideoStreamingServer {
 
                              ? scheme + "://" + host : "http://localhost";
  
-            String playerUrl = baseUrl + "/player";
+            String playerUrl = escapeHtml(baseUrl + "/player");
 
-            String metaUrl   = baseUrl + "/meta";
+            String metaUrl   = escapeHtml(baseUrl + "/meta");
+
+            addSecurityHeaders(ex);
  
             String html = "<!DOCTYPE html><html lang='en'><head>"
 
@@ -344,7 +376,7 @@ public class VideoStreamingServer {
 
             }
  
-            String host    = ex.getRequestHeaders().getFirst("Host");
+            String host    = sanitizeHost(ex.getRequestHeaders().getFirst("Host"));
 
             boolean secure = (host != null && !host.contains("localhost"));
 
@@ -416,9 +448,15 @@ public class VideoStreamingServer {
  
             byte[] body = sb.toString().getBytes("UTF-8");
 
+            addSecurityHeaders(ex);
+
             ex.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
 
-            ex.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+            if (!ALLOWED_CORS_ORIGIN.isEmpty()) {
+
+                ex.getResponseHeaders().set("Access-Control-Allow-Origin", ALLOWED_CORS_ORIGIN);
+
+            }
 
             ex.sendResponseHeaders(200, body.length);
 
@@ -472,7 +510,11 @@ public class VideoStreamingServer {
 
             ex.getResponseHeaders().set("Cache-Control", "no-cache");
 
-            ex.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+            if (!ALLOWED_CORS_ORIGIN.isEmpty()) {
+
+                ex.getResponseHeaders().set("Access-Control-Allow-Origin", ALLOWED_CORS_ORIGIN);
+
+            }
 
             ex.sendResponseHeaders(200, 0);
  
@@ -659,6 +701,42 @@ public class VideoStreamingServer {
         Imgcodecs.imencode(".jpg", frame, buf, params);
 
         return buf.toArray();
+
+    }
+ 
+    private static String sanitizeHost(String host) {
+
+        if (host == null) return null;
+
+        return host.replaceAll("[^a-zA-Z0-9.:\\[\\]\\-]", "");
+
+    }
+
+    private static String escapeHtml(String s) {
+
+        if (s == null) return "";
+
+        return s.replace("&", "&amp;")
+
+                .replace("<", "&lt;")
+
+                .replace(">", "&gt;")
+
+                .replace("\"", "&quot;")
+
+                .replace("'", "&#39;");
+
+    }
+
+    private static void addSecurityHeaders(HttpExchange ex) {
+
+        ex.getResponseHeaders().set("X-Content-Type-Options", "nosniff");
+
+        ex.getResponseHeaders().set("X-Frame-Options", "DENY");
+
+        ex.getResponseHeaders().set("Content-Security-Policy",
+
+            "default-src 'self'; img-src 'self'; style-src 'self' 'unsafe-inline'");
 
     }
  
