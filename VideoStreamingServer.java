@@ -34,11 +34,7 @@ public class VideoStreamingServer {
  
     private static final int DEFAULT_PORT  = 9090;
 
-    private static final int TARGET_HEIGHT = 360;
-
-    private static final int TARGET_WIDTH  = 640;
-
-    private static final int OVERLAP_PX    = 80;
+    // Panorama layout constants are now in PanoramaConfig.
  
     // =========================================================================
 
@@ -170,13 +166,7 @@ public class VideoStreamingServer {
 
                 + "</body></html>";
  
-            byte[] bytes = html.getBytes("UTF-8");
-
-            ex.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
-
-            ex.sendResponseHeaders(200, bytes.length);
-
-            try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
+            HttpResponseUtil.sendHtml(ex, html);
 
         }
 
@@ -194,15 +184,7 @@ public class VideoStreamingServer {
 
         public void handle(HttpExchange ex) throws IOException {
  
-            String host    = ex.getRequestHeaders().getFirst("Host");
-
-            boolean secure = (host != null && !host.contains("localhost"));
-
-            String scheme  = secure ? "https" : "http";
-
-            String baseUrl = (host != null && !host.isEmpty())
-
-                             ? scheme + "://" + host : "http://localhost";
+            String baseUrl = HttpResponseUtil.buildBaseUrl(ex, DEFAULT_PORT);
  
             String playerUrl = baseUrl + "/player";
 
@@ -308,13 +290,7 @@ public class VideoStreamingServer {
 
                 + "</body></html>";
  
-            byte[] bytes = html.getBytes("UTF-8");
-
-            ex.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
-
-            ex.sendResponseHeaders(200, bytes.length);
-
-            try (OutputStream os = ex.getResponseBody()) { os.write(bytes); }
+            HttpResponseUtil.sendHtml(ex, html);
 
         }
 
@@ -336,31 +312,17 @@ public class VideoStreamingServer {
 
         public void handle(HttpExchange ex) throws IOException {
 
-            if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) {
-
-                ex.sendResponseHeaders(405, -1);
-
-                return;
-
-            }
+            if (HttpResponseUtil.rejectNonGet(ex)) return;
  
-            String host    = ex.getRequestHeaders().getFirst("Host");
-
-            boolean secure = (host != null && !host.contains("localhost"));
-
-            String scheme  = secure ? "https" : "http";
-
-            if (host == null || host.isEmpty()) host = "localhost:" + port;
-
-            String baseUrl = scheme + "://" + host;
+            String baseUrl = HttpResponseUtil.buildBaseUrl(ex, port);
  
             int N       = 4;
 
-            int overlap = Math.min(OVERLAP_PX, TARGET_WIDTH / 4);
+            int overlap = PanoramaConfig.effectiveOverlap();
 
-            int panoW   = TARGET_WIDTH + (N - 1) * (TARGET_WIDTH - overlap);
+            int panoW   = PanoramaConfig.panoramaWidth(N);
 
-            int panoH   = TARGET_HEIGHT;
+            int panoH   = PanoramaConfig.TARGET_HEIGHT;
  
             String[] names = { "front", "rear", "left", "right" };
  
@@ -384,9 +346,9 @@ public class VideoStreamingServer {
  
             for (int i = 0; i < N; i++) {
 
-                int x = i * (TARGET_WIDTH - overlap);
+                int x = i * (PanoramaConfig.TARGET_WIDTH - overlap);
 
-                int w = (x + TARGET_WIDTH <= panoW) ? TARGET_WIDTH : (panoW - x);
+                int w = (x + PanoramaConfig.TARGET_WIDTH <= panoW) ? PanoramaConfig.TARGET_WIDTH : (panoW - x);
  
                 sb.append("    \"").append(names[i]).append("\": {\n");
 
@@ -398,9 +360,9 @@ public class VideoStreamingServer {
 
                 sb.append("      \"h\": ").append(panoH).append(",\n");
 
-                sb.append("      \"source_w\": ").append(TARGET_WIDTH).append(",\n");
+                sb.append("      \"source_w\": ").append(PanoramaConfig.TARGET_WIDTH).append(",\n");
 
-                sb.append("      \"source_h\": ").append(TARGET_HEIGHT).append(",\n");
+                sb.append("      \"source_h\": ").append(PanoramaConfig.TARGET_HEIGHT).append(",\n");
 
                 sb.append("      \"overlap_px\": ").append(overlap).append("\n");
 
@@ -414,15 +376,7 @@ public class VideoStreamingServer {
  
             sb.append("  }\n}");
  
-            byte[] body = sb.toString().getBytes("UTF-8");
-
-            ex.getResponseHeaders().set("Content-Type", "application/json; charset=UTF-8");
-
-            ex.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
-
-            ex.sendResponseHeaders(200, body.length);
-
-            try (OutputStream os = ex.getResponseBody()) { os.write(body); }
+            HttpResponseUtil.sendJson(ex, sb.toString());
 
         }
 
@@ -444,13 +398,7 @@ public class VideoStreamingServer {
 
         public void handle(HttpExchange ex) throws IOException {
 
-            if (!"GET".equalsIgnoreCase(ex.getRequestMethod())) {
-
-                ex.sendResponseHeaders(405, -1);
-
-                return;
-
-            }
+            if (HttpResponseUtil.rejectNonGet(ex)) return;
  
             VideoCapture[] caps = new VideoCapture[videoFiles.length];
 
@@ -502,7 +450,7 @@ public class VideoStreamingServer {
 
                         }
 
-                        Imgproc.resize(frames[i], resized[i], new Size(TARGET_WIDTH, TARGET_HEIGHT));
+                        Imgproc.resize(frames[i], resized[i], new Size(PanoramaConfig.TARGET_WIDTH, PanoramaConfig.TARGET_HEIGHT));
 
                     }
 
@@ -536,13 +484,13 @@ public class VideoStreamingServer {
 
         int N = frames.length;
 
-        int H = TARGET_HEIGHT;
+        int H = PanoramaConfig.TARGET_HEIGHT;
 
-        int W = TARGET_WIDTH;
+        int W = PanoramaConfig.TARGET_WIDTH;
  
-        int overlap = Math.min(OVERLAP_PX, W / 4);
+        int overlap = PanoramaConfig.effectiveOverlap();
 
-        int panoW   = W + (N - 1) * (W - overlap);
+        int panoW   = PanoramaConfig.panoramaWidth(N);
  
         Mat accumColor  = Mat.zeros(H, panoW, CvType.CV_32FC3);
 
@@ -632,7 +580,7 @@ public class VideoStreamingServer {
 
             for (int y = 0; y < H; y++) {
 
-                mask.put(y, x,         new float[]{ alpha });
+                mask.put(y, x, new float[]{ alpha });
 
                 mask.put(y, W - 1 - x, new float[]{ alpha });
 
