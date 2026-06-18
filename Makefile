@@ -9,7 +9,13 @@ else
 CP := .:$(OPENCV_JAR)
 endif
 
-%.class : %.java
+UTIL_SRCS := HttpResponseUtil.java PanoramaConfig.java StreamUtil.java
+UTIL_CLASSES := $(UTIL_SRCS:.java=.class)
+
+$(UTIL_CLASSES) : $(UTIL_SRCS)
+	javac -cp "$(CP)" $(UTIL_SRCS)
+
+%.class : %.java $(UTIL_CLASSES)
 	javac -cp "$(CP)" $<
 
 all : VideoStreamingServer.class VideoStreamingClient.class

@@ -72,11 +72,7 @@ public class VideoStreamingClient {
                 }
 
                 try (InputStream input = response.body()) {
-                    byte[] buffer = new byte[8192];
-                    int bytesRead;
-                    while ((bytesRead = input.read(buffer)) != -1) {
-                        fos.write(buffer, 0, bytesRead);
-                    }
+                    StreamUtil.transfer(input, fos);
                 }
 
                 downloaded = end + 1;
@@ -121,13 +117,7 @@ public class VideoStreamingClient {
         }
 
         try (InputStream input = response.body(); FileOutputStream fos = new FileOutputStream(outputFile.toFile())) {
-            byte[] buffer = new byte[8192];
-            int bytesRead;
-            long total = 0;
-            while ((bytesRead = input.read(buffer)) != -1) {
-                fos.write(buffer, 0, bytesRead);
-                total += bytesRead;
-            }
+            long total = StreamUtil.transfer(input, fos);
             System.out.println("Downloaded " + total + " bytes to " + outputFile);
         }
     }
