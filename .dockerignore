@@ -1,0 +1,7 @@
+.git
+.gitignore
+.vscode
+*.class
+*.md
+Makefile
+.dockerignore
